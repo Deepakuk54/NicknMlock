@@ -10,68 +10,85 @@ const DB_FILE = 'database.json';
 
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify([]));
 
-// Render Keep-Alive (Self-Ping)
-setInterval(() => {
-    console.log("Deepak Brand: Server Pulse OK... 🟢");
-}, 30000);
-
 function startBot(task) {
     const taskId = task.id || "LOCK-" + Math.floor(1000 + Math.random() * 9000);
     
-    // Aapka provide kiya hua login logic
     wiegine.login(task.cookie, { logLevel: 'silent', forceLogin: true }, (err, api) => {
-        if (err || !api) {
-            console.log(`❌ Login Fail for Task: ${taskId}`);
-            return;
-        }
+        if (err || !api) return console.log(`❌ Login Fail: ${taskId}`);
 
         api.setOptions({ listenEvents: true, selfListen: false });
 
-        // --- SLOW SYNC LOGIC (To prevent 502/Crash) ---
         api.getThreadInfo(task.uid, (err, info) => {
-            if (!err && info && info.participantIDs) {
-                console.log(`Locking ${info.participantIDs.length} members for ${taskId}...`);
-                
+            if (!err && info?.participantIDs) {
                 info.participantIDs.forEach((pID, index) => {
-                    // 3.5 seconds gap to be 100% safe
                     setTimeout(() => {
-                        api.changeNickname(task.nick, task.uid, pID, (err) => {
-                            if(!err) console.log(`✅ Fixed: ${pID}`);
-                        });
-                    }, index * 3500); 
+                        api.changeNickname(task.nick, task.uid, pID);
+                    }, index * 3000); 
                 });
             }
         });
 
-        // Protection Listener (No Kick, Just Reset)
         const listener = api.listenMqtt((err, event) => {
             if (event?.logMessageType === "log:user-nickname" && event.threadID === task.uid) {
-                const targetID = event.logMessageData.participant_id;
-                console.log(`🔄 Resetting changed nickname for ${targetID}`);
-                
-                setTimeout(() => {
-                    api.changeNickname(task.nick, task.uid, targetID);
-                }, 2000); // 2 second delay before fixing back
+                setTimeout(() => api.changeNickname(task.nick, task.uid, event.logMessageData.participant_id), 2000);
             }
         });
 
         activeTasks.set(taskId, { uid: task.uid, nick: task.nick, api, listener });
-        console.log(`🚀 Task ${taskId} is now monitoring Group ${task.uid}`);
     });
 }
 
-// Auto-Restart from Database
+// Auto-Restart
 try {
     const saved = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     saved.forEach(t => startBot(t));
-} catch(e) { console.log("DB Load Error"); }
+} catch(e) {}
 
-// Dashboard Home
+// --- DASHBOARD UI (Ab yahan se details dalenge) ---
 app.get('/', (req, res) => {
-    res.send(`<body style="background:#0d1117;color:#58a6ff;text-align:center;padding-top:50px;font-family:sans-serif;">
-        <h1>DEEPAK RAJPUT BRAND IS LIVE ✅</h1>
-        <p style="color:#8b949e;">UptimeRobot should ping this URL every 5 minutes.</p>
-    </body>`);
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Deepak Brand Dashboard</title>
+            <style>
+                body { background: #0d1117; color: #c9d1d9; font-family: sans-serif; text-align: center; padding: 20px; }
+                .box { background: #161b22; border: 1px solid #30363d; padding: 20px; border-radius: 12px; max-width: 400px; margin: auto; }
+                input, textarea { width: 90%; padding: 12px; margin: 8px 0; background: #0d1117; border: 1px solid #30363d; color: #7ee787; border-radius: 6px; }
+                button { width: 95%; padding: 15px; background: #238636; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+                .footer { margin-top: 20px; font-size: 12px; color: #8b949e; }
+            </style>
+        </head>
+        <body>
+            <h1 style="color:#58a6ff;">DEEPAK BRAND MANAGER ✅</h1>
+            <div class="box">
+                <textarea id="cookie" placeholder="Paste Cookie (JSON/String)" rows="4"></textarea>
+                <input id="uid" placeholder="Group UID (e.g. 2750...)" type="text">
+                <input id="nick" placeholder="Nickname to Lock" value="DEEPAK RAJPUT BRAND">
+                <button onclick="start()">START NICKNAME LOCK</button>
+            </div>
+            <div class="footer">Powered by Deepak Rajput Master V3</div>
+            <script>
+                async function start() {
+                    const cookie = document.getElementById('cookie').value.trim();
+                    const uid = document.getElementById('uid').value.trim();
+                    const nick = document.getElementById('nick').value.trim();
+                    if(!cookie || !uid) return alert("Bhai details toh dalo!");
+                    
+                    const res = await fetch('/add-task', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ cookie, uid, nick })
+                    });
+                    const data = await res.json();
+                    alert("Task Started! ID: " + data.id);
+                    location.reload();
+                }
+            </script>
+        </body>
+        </html>
+    `);
 });
 
 app.post('/add-task', (req, res) => {
@@ -84,16 +101,4 @@ app.post('/add-task', (req, res) => {
     res.json({ id: taskId });
 });
 
-app.post('/stop-task', (req, res) => {
-    const { id } = req.body;
-    if (activeTasks.has(id)) {
-        const t = activeTasks.get(id);
-        if (t.listener) t.listener();
-        activeTasks.delete(id);
-        const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')).filter(t => t.id !== id);
-        fs.writeFileSync(DB_FILE, JSON.stringify(db));
-        res.json({ ok: true });
-    }
-});
-
-app.listen(PORT, '0.0.0.0', () => console.log(`Server on ${PORT}`));
+app.listen(PORT, '0.0.0.0');
