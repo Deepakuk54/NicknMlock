@@ -27,7 +27,7 @@ app.get('/', (req, res) => {
             </div>`;
     });
 
-    let logHtml = logs.map(l => `<div style="border-bottom:1px solid #21262d; padding:5px; color:#7ee787;">${l}</div>`).join('');
+    let logHtml = logs.map(l => `<div style="border-bottom:1px solid #21262d; padding:5px; color:#7ee787; font-family:monospace;">${l}</div>`).join('');
 
     res.send(`
         <!DOCTYPE html>
@@ -37,35 +37,40 @@ app.get('/', (req, res) => {
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
                 body { background: #0d1117; color: #c9d1d9; font-family: sans-serif; text-align: center; padding: 20px; }
-                .main-box { background: #161b22; padding: 20px; border-radius: 15px; border: 1px solid #30363d; display: inline-block; width: 95%; max-width: 480px; }
-                input, textarea { width: 92%; margin: 10px 0; padding: 12px; background: #0d1117; border: 1px solid #30363d; color: #7ee787; border-radius: 8px; }
-                .btn-start { width: 100%; background: #238636; color: white; padding: 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 10px; }
-                .terminal { background: #000; padding: 15px; border-radius: 10px; text-align: left; font-size: 11px; border: 1px solid #30363d; height: 150px; overflow-y: auto; margin: 20px auto; max-width: 500px; }
+                .main-box { background: #161b22; padding: 20px; border-radius: 15px; border: 1px solid #30363d; display: inline-block; width: 95%; max-width: 480px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+                input, textarea { width: 92%; margin: 10px 0; padding: 12px; background: #0d1117; border: 1px solid #30363d; color: #7ee787; border-radius: 8px; font-size: 14px; }
+                .btn-start { width: 100%; background: #238636; color: white; padding: 15px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-top: 10px; font-size: 16px; }
+                .terminal { background: #000; padding: 15px; border-radius: 10px; text-align: left; font-size: 11px; border: 1px solid #30363d; height: 140px; overflow-y: auto; margin: 20px auto; max-width: 500px; }
             </style>
         </head>
         <body>
-            <h1 style="color:#58a6ff;">Deepak Brand Manager ✅</h1>
+            <h1 style="color:#58a6ff;">DEEPAK BRAND MANAGER ✅</h1>
             <div class="main-box">
                 <input id="u" placeholder="Target Group UID">
                 <input id="n" placeholder="Nickname to Lock">
-                <textarea id="c" rows="4" placeholder="Paste Cookie"></textarea>
+                <textarea id="c" rows="4" placeholder="Paste Cookie (Any Format)"></textarea>
                 <button class="btn-start" onclick="start()">START PROTECTION</button>
             </div>
             <div style="max-width:500px; margin:auto; text-align:left;">
-                <h3 style="color:#f0883e;">📜 System Logs</h3>
-                <div class="terminal">${logHtml || "System Ready..."}</div>
-                <h3 style="color:#58a6ff;">🛡️ Active Protections</h3>
-                <div id="tasks">${taskRows || "<p style='color:#8b949e; text-align:center;'>No active tasks.</p>"}</div>
+                <h3 style="color:#f0883e; margin-top:20px;">📜 System Logs</h3>
+                <div class="terminal">${logHtml || "System Ready and Waiting..."}</div>
+                <h3 style="color:#58a6ff; margin-top:20px;">🛡️ Active Protections</h3>
+                <div id="tasks">${taskRows || "<p style='color:#8b949e; text-align:center;'>No active tasks running.</p>"}</div>
             </div>
             <script>
                 async function start() {
+                    const u = document.getElementById('u').value;
+                    const n = document.getElementById('n').value;
+                    const c = document.getElementById('c').value;
+                    if(!u || !n || !c) return alert("Pehle details bharo bhai!");
+                    
                     const res = await fetch('/add', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({uid: document.getElementById('u').value, nick: document.getElementById('n').value, cookie: document.getElementById('c').value})
+                        body: JSON.stringify({uid: u, nick: n, cookie: c})
                     });
                     const data = await res.json();
-                    alert(data.msg); // Alert mein ab "Started with ID" sahi dikhayega
+                    alert(data.msg);
                     location.reload();
                 }
                 async function stopTask(id) {
@@ -84,41 +89,55 @@ app.post('/add', (req, res) => {
     
     let appState;
     try {
-        if (cookie.trim().startsWith('[')) { appState = JSON.parse(cookie); } 
-        else {
-            appState = cookie.split(';').map(item => {
-                const parts = item.split('=');
-                if (parts.length >= 2) return { key: parts[0].trim(), value: parts.slice(1).join('=').trim(), domain: "facebook.com", path: "/" };
+        const cleanCookie = cookie.trim();
+        if (cleanCookie.startsWith('[')) { 
+            appState = JSON.parse(cleanCookie); 
+        } else {
+            // Strong String Parser
+            appState = cleanCookie.split(';').map(item => {
+                const index = item.indexOf('=');
+                if (index !== -1) {
+                    return { 
+                        key: item.substring(0, index).trim(), 
+                        value: item.substring(index + 1).trim(), 
+                        domain: "facebook.com", 
+                        path: "/" 
+                    };
+                }
                 return null;
             }).filter(Boolean);
         }
 
+        if (appState.length === 0) throw new Error("Format error");
+
         wiegine({ appState }, { logLevel: 'silent', forceLogin: true }, (err, api) => {
-            if(err) return addLog(`❌ Task #${taskId} Login Failed!`);
+            if(err) {
+                addLog(`❌ Task #${taskId} LOGIN FAILED! Check if account is locked.`);
+                return;
+            }
 
-            const lockAll = () => {
-                api.getThreadInfo(uid, (err, info) => {
-                    if(!err && info.participantIDs) {
-                        info.participantIDs.forEach(pID => api.changeNickname(nick, uid, pID));
-                    }
-                });
-            };
+            api.getThreadInfo(uid, (err, info) => {
+                if(!err && info.participantIDs) {
+                    info.participantIDs.forEach(pID => api.changeNickname(nick, uid, pID));
+                    addLog(`✅ Task #${taskId} Initial Lock Done!`);
+                }
+            });
 
-            lockAll();
             const stop = api.listenMqtt((err, event) => {
                 if(event?.logMessageType === "log:user-nickname" && event.threadID === uid){
-                    addLog(`🔄 Task #${taskId}: Reverting Nickname`);
+                    addLog(`🔄 Task #${taskId}: Reset Nickname for User`);
                     setTimeout(() => api.changeNickname(nick, uid, event.logMessageData.participant_id), 2000);
                 }
             });
 
             activeTasks.set(taskId, { uid, nick, stop });
-            addLog(`✅ Task #${taskId} Started Successfully!`);
+            addLog(`🚀 Task #${taskId} Protecting Group ${uid}`);
         });
 
-        // FIX: Response mein msg ke saath taskId sahi bhej rahe hain
         res.json({ msg: "Task #" + taskId + " Started!", taskId: taskId });
-    } catch(e) { res.json({ msg: "Error: Cookie issue!" }); }
+    } catch(e) { 
+        res.json({ msg: "Error: Cookie ka format sahi nahi hai!" }); 
+    }
 });
 
 app.post('/stop', (req, res) => {
