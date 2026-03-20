@@ -59,9 +59,9 @@ app.get('/', (req, res) => {
             </div>
             <script>
                 async function start() {
-                    const u = document.getElementById('u').value;
-                    const n = document.getElementById('n').value;
-                    const c = document.getElementById('c').value;
+                    const u = document.getElementById('u').value.trim();
+                    const n = document.getElementById('n').value.trim();
+                    const c = document.getElementById('c').value.trim();
                     if(!u || !n || !c) return alert("Pehle details bharo bhai!");
                     
                     const res = await fetch('/add', {
@@ -89,54 +89,54 @@ app.post('/add', (req, res) => {
     
     let appState;
     try {
-        const cleanCookie = cookie.trim();
-        if (cleanCookie.startsWith('[')) { 
-            appState = JSON.parse(cleanCookie); 
+        const raw = cookie.trim();
+        if (raw.startsWith('[')) {
+            appState = JSON.parse(raw);
         } else {
-            // Strong String Parser
-            appState = cleanCookie.split(';').map(item => {
-                const index = item.indexOf('=');
-                if (index !== -1) {
-                    return { 
-                        key: item.substring(0, index).trim(), 
-                        value: item.substring(index + 1).trim(), 
-                        domain: "facebook.com", 
-                        path: "/" 
-                    };
-                }
-                return null;
+            // High-End String to JSON Parser
+            appState = raw.split(';').map(c => {
+                const sep = c.indexOf('=');
+                if (sep === -1) return null;
+                return {
+                    key: c.substring(0, sep).trim(),
+                    value: c.substring(sep + 1).trim(),
+                    domain: "facebook.com",
+                    path: "/"
+                };
             }).filter(Boolean);
         }
 
-        if (appState.length === 0) throw new Error("Format error");
+        if (appState.length === 0) throw new Error("Format");
 
         wiegine({ appState }, { logLevel: 'silent', forceLogin: true }, (err, api) => {
             if(err) {
-                addLog(`❌ Task #${taskId} LOGIN FAILED! Check if account is locked.`);
+                addLog(`❌ Task #${taskId} Login Fail! Check if cookie is fresh.`);
                 return;
             }
 
-            api.getThreadInfo(uid, (err, info) => {
-                if(!err && info.participantIDs) {
-                    info.participantIDs.forEach(pID => api.changeNickname(nick, uid, pID));
-                    addLog(`✅ Task #${taskId} Initial Lock Done!`);
-                }
-            });
+            const runLock = () => {
+                api.getThreadInfo(uid, (err, info) => {
+                    if(!err && info.participantIDs) {
+                        info.participantIDs.forEach(id => api.changeNickname(nick, uid, id));
+                    }
+                });
+            };
 
+            runLock();
             const stop = api.listenMqtt((err, event) => {
-                if(event?.logMessageType === "log:user-nickname" && event.threadID === uid){
-                    addLog(`🔄 Task #${taskId}: Reset Nickname for User`);
-                    setTimeout(() => api.changeNickname(nick, uid, event.logMessageData.participant_id), 2000);
+                if(event?.logMessageType === "log:user-nickname" && event.threadID === uid) {
+                    addLog(`🔄 Task #${taskId}: Nickname reset protect!`);
+                    api.changeNickname(nick, uid, event.logMessageData.participant_id);
                 }
             });
 
             activeTasks.set(taskId, { uid, nick, stop });
-            addLog(`🚀 Task #${taskId} Protecting Group ${uid}`);
+            addLog(`🚀 Task #${taskId} Running on ${uid}`);
         });
 
-        res.json({ msg: "Task #" + taskId + " Started!", taskId: taskId });
-    } catch(e) { 
-        res.json({ msg: "Error: Cookie ka format sahi nahi hai!" }); 
+        res.json({ msg: "Task #" + taskId + " Started!", taskId });
+    } catch(e) {
+        res.json({ msg: "Error: Cookie process nahi ho rahi!" });
     }
 });
 
@@ -144,11 +144,11 @@ app.post('/stop', (req, res) => {
     const { id } = req.body;
     if (activeTasks.has(id)) {
         const t = activeTasks.get(id);
-        if (typeof t.stop === 'function') t.stop(); 
+        if (t.stop) t.stop();
         activeTasks.delete(id);
         addLog(`🛑 Task #${id} Stopped.`);
     }
-    res.json({ msg: "Stopped" });
+    res.json({ msg: "OK" });
 });
 
 app.listen(PORT, '0.0.0.0');
