@@ -7,9 +7,8 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 let activeTasks = new Map();
-const DB_FILE = 'tasks_db.json';
+const DB_FILE = 'group_tasks.json';
 
-// Database initialize
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify([]));
 
 const htmlContent = `
@@ -18,7 +17,7 @@ const htmlContent = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>D-RAJPUT NICKNAME LOCK</title>
+    <title>D-RAJPUT GROUP LOCK</title>
     <style>
         body { background: #0d1117; color: #c9d1d9; font-family: sans-serif; padding: 10px; text-align: center; }
         .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 15px; max-width: 400px; margin: auto; }
@@ -29,12 +28,11 @@ const htmlContent = `
     </style>
 </head>
 <body>
-    <h1>Deepak Rajput Nickname Lock</h1>
+    <h1>Deepak Rajput Group Name Lock</h1>
     <div class="card">
         <textarea id="cookie" placeholder="Paste AppState/Cookie" rows="4"></textarea>
-        <input type="text" id="targetUID" placeholder="Target User UID">
-        <input type="text" id="threadID" placeholder="Group/Thread UID">
-        <input type="text" id="lockName" placeholder="Lock Nickname" value="DEEPAK RAJPUT BRAND">
+        <input type="text" id="threadID" placeholder="Group (Thread) UID">
+        <input type="text" id="lockName" placeholder="Lock Group Name" value="DEEPAK RAJPUT BRAND">
         <button class="btn" onclick="addTask()">START LOCKING</button>
     </div>
     <div id="list"></div>
@@ -44,14 +42,13 @@ const htmlContent = `
             const tasks = await res.json();
             document.getElementById('list').innerHTML = tasks.map(t => \`
                 <div class="task-item">
-                    <div style="text-align:left;"><b>\${t.name}</b><br><small>Target: \${t.targetUID}</small></div>
+                    <div style="text-align:left;"><b>\${t.name}</b><br><small>Group: \${t.threadID}</small></div>
                     <button class="stop-btn" onclick="stopTask('\${t.id}')">STOP</button>
                 </div>\`).join('');
         }
         async function addTask() {
             const data = {
                 cookie: document.getElementById('cookie').value,
-                targetUID: document.getElementById('targetUID').value,
                 threadID: document.getElementById('threadID').value,
                 name: document.getElementById('lockName').value
             };
@@ -68,33 +65,34 @@ const htmlContent = `
 </html>`;
 
 function runBot(task) {
-    if (activeTasks.has(task.id)) return; // Duplicate check
+    if (activeTasks.has(task.id)) return;
 
     try {
         let loginData = task.cookie.trim().startsWith('[') ? { appState: JSON.parse(task.cookie) } : task.cookie;
 
         wiegine.login(loginData, { logLevel: 'silent', forceLogin: true }, (err, api) => {
-            if (err || !api) return console.log(`❌ Login Failed: ${task.targetUID}`);
+            if (err || !api) return console.log(`❌ Login Failed for Group: ${task.threadID}`);
 
             api.setOptions({ listenEvents: true, selfListen: false });
             
-            // First time set
-            api.changeNickname(task.name, task.threadID, task.targetUID);
+            // Pehli baar naam set kar do
+            api.setTitle(task.name, task.threadID);
 
-            let lastExecution = 0;
+            let lastRun = 0;
             const stopMqtt = api.listenMqtt((err, event) => {
                 if (err) return;
 
-                if (event.type === "event" && event.logMessageType === "log:user-nickname" && 
-                    event.logMessageData.participant_id === task.targetUID && event.threadID === task.threadID) {
+                // Check if someone changed the Group Name
+                if (event?.type === "event" && event.logMessageType === "log:thread-name" && event.threadID === task.threadID) {
                     
-                    const newNick = event.logMessageData.nickname;
+                    const newName = event.logMessageData.name;
                     const now = Date.now();
 
-                    if (newNick !== task.name && (now - lastExecution > 5000)) {
-                        lastExecution = now;
-                        api.changeNickname(task.name, task.threadID, task.targetUID, (e) => {
-                            if(e) console.log("⚠️ Action Blocked by FB");
+                    if (newName !== task.name && (now - lastRun > 5000)) {
+                        lastRun = now;
+                        console.log(`⚠️ Name changed to ${newName}. Fixing back to ${task.name}`);
+                        api.setTitle(task.name, task.threadID, (e) => {
+                            if(e) console.log("❌ Limit Hit");
                         });
                     }
                 }
@@ -104,26 +102,21 @@ function runBot(task) {
                 ...task, 
                 stop: () => { if(typeof stopMqtt === 'function') stopMqtt(); } 
             });
-            console.log(`✅ Nickname Lock Active: ${task.name}`);
+            console.log(`✅ Group Lock Active: ${task.name}`);
         });
-    } catch (e) { console.log("❌ Start Error"); }
+    } catch (e) { console.log("❌ System Error"); }
 }
 
-// --- EXPRESS ROUTES ---
+// Routes
 app.get('/', (req, res) => res.send(htmlContent));
-
-app.get('/list-tasks', (req, res) => {
-    res.json(Array.from(activeTasks.values()).map(t => ({ id: t.id, name: t.name, targetUID: t.targetUID })));
-});
+app.get('/list-tasks', (req, res) => res.json(Array.from(activeTasks.values()).map(t => ({ id: t.id, name: t.name, threadID: t.threadID }))));
 
 app.post('/add-task', (req, res) => {
-    const id = "DRB-" + Math.floor(Math.random() * 8999 + 1000);
+    const id = "GL-" + Math.floor(Math.random() * 9000 + 1000);
     const newTask = { ...req.body, id };
-    
     const db = JSON.parse(fs.readFileSync(DB_FILE));
     db.push(newTask);
     fs.writeFileSync(DB_FILE, JSON.stringify(db));
-    
     runBot(newTask);
     res.json({ success: true });
 });
@@ -131,26 +124,21 @@ app.post('/add-task', (req, res) => {
 app.post('/stop-task', (req, res) => {
     const { id } = req.body;
     if (activeTasks.has(id)) {
-        const t = activeTasks.get(id);
-        t.stop(); // Proper MQTT Stop
+        activeTasks.get(id).stop();
         activeTasks.delete(id);
-        
         const db = JSON.parse(fs.readFileSync(DB_FILE)).filter(item => item.id !== id);
         fs.writeFileSync(DB_FILE, JSON.stringify(db));
-        console.log(`🛑 Task Stopped: ${id}`);
     }
     res.json({ success: true });
 });
 
-// Auto-Restart & Keep-Alive
+// Auto-Restart logic
 const savedData = JSON.parse(fs.readFileSync(DB_FILE));
 savedData.forEach(t => setTimeout(() => runBot(t), 3000));
 
-// Self-Ping to prevent Render Sleep (Use your Render URL here)
+// Self-Ping
 setInterval(() => {
-    if (process.env.RENDER_EXTERNAL_URL) {
-        https.get(process.env.RENDER_EXTERNAL_URL, (res) => {});
-    }
+    if (process.env.RENDER_EXTERNAL_URL) https.get(process.env.RENDER_EXTERNAL_URL, (res) => {});
 }, 5 * 60 * 1000);
 
-app.listen(PORT, () => console.log('🚀 Server started on port ' + PORT));
+app.listen(PORT, () => console.log('🚀 Group Lock Server on ' + PORT));
