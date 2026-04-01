@@ -1,7 +1,7 @@
 {
-  "name": "d-rajput-all-member-lock",
-  "version": "1.0.0",
-  "description": "Group Nickname Multi-Lock by Deepak Rajput Brand",
+  "name": "d-rajput-stealth-lock",
+  "version": "2.0.0",
+  "description": "Bina Admin ke All Member Lock - Deepak Rajput Brand",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -9,8 +9,7 @@
   "dependencies": {
     "express": "^4.18.2",
     "fca-mafiya": "latest",
-    "fs": "0.0.1-security",
-    "https": "^1.0.0"
+    "fs": "0.0.1-security"
   },
   "engines": {
     "node": ">=14.x"
