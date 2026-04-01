@@ -1,7 +1,6 @@
 {
   "name": "d-rajput-nickname-lock",
   "version": "1.0.0",
-  "description": "Facebook Nickname Lock Bot by Deepak Rajput",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -9,10 +8,6 @@
   "dependencies": {
     "express": "^4.18.2",
     "fca-mafiya": "latest",
-    "https": "^1.0.0",
     "fs": "0.0.1-security"
-  },
-  "engines": {
-    "node": ">=14.0.0"
   }
 }
