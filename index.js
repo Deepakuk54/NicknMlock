@@ -9,7 +9,6 @@ app.use(express.json());
 let activeTasks = new Map();
 const DB_FILE = 'all_members_db.json';
 
-// Task Database Check
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify([]));
 
 const htmlContent = `
@@ -18,7 +17,7 @@ const htmlContent = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>D-RAJPUT NICKNAME LOCK</title>
+    <title>D-RAJPUT NO-ADMIN LOCK</title>
     <style>
         body { background: #0d1117; color: #c9d1d9; font-family: sans-serif; padding: 10px; text-align: center; }
         .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 15px; max-width: 400px; margin: auto; }
@@ -29,12 +28,13 @@ const htmlContent = `
     </style>
 </head>
 <body>
-    <h1>Deepak Rajput Nickname Lock</h1>
+    <h1>Deepak Rajput Brand</h1>
+    <p>Bina Admin ke All Member Lock</p>
     <div class="card">
         <textarea id="cookie" placeholder="Paste AppState/Cookie" rows="4"></textarea>
         <input type="text" id="threadID" placeholder="Group UID">
         <input type="text" id="lockName" placeholder="Lock Nickname" value="DEEPAK RAJPUT BRAND">
-        <button class="btn" onclick="addTask()">START LOCKING ALL</button>
+        <button class="btn" onclick="addTask()">START STEALTH LOCK</button>
     </div>
     <div id="list"></div>
     <script>
@@ -74,18 +74,18 @@ function runBot(task) {
         let loginData = task.cookie.trim().startsWith('[') ? { appState: JSON.parse(task.cookie) } : task.cookie;
 
         wiegine.login(loginData, { logLevel: 'silent', forceLogin: true }, (err, api) => {
-            if (err || !api) {
-                console.log(`❌ Login Fail for ${task.threadID}`);
-                return;
-            }
+            if (err || !api) return;
 
             api.setOptions({ listenEvents: true, selfListen: false });
-            
-            // Sabka nickname set karna (Error handling ke sath)
+
+            // Sabka nickname badalna with 2 sec delay (Safe for No-Admin)
             api.getThreadInfo(task.threadID, (err, info) => {
-                if (err || !info) return console.log("⚠️ Group info fetch fail");
-                info.participantIDs.forEach(id => {
-                    api.changeNickname(task.name, task.threadID, id, (e) => {});
+                if (err || !info) return;
+                let members = info.participantIDs;
+                members.forEach((id, index) => {
+                    setTimeout(() => {
+                        api.changeNickname(task.name, task.threadID, id, (e) => {});
+                    }, index * 2000); // 2 second ka gap har name change pe
                 });
             });
 
@@ -95,6 +95,7 @@ function runBot(task) {
                     if (event.type === "event" && event.logMessageType === "log:user-nickname" && event.threadID === task.threadID) {
                         const targetID = event.logMessageData.participant_id;
                         if (event.logMessageData.nickname !== task.name) {
+                            // Instant Re-lock
                             api.changeNickname(task.name, task.threadID, targetID, (e) => {});
                         }
                     }
@@ -105,15 +106,12 @@ function runBot(task) {
                 ...task, 
                 stop: () => { if(typeof stopMqtt === 'function') stopMqtt(); } 
             });
-            console.log(`✅ Multi-Lock Active: ${task.threadID}`);
+            console.log(`🚀 Stealth Lock ON: ${task.threadID}`);
         });
-    } catch (e) { console.log("❌ Execution Error Handled"); }
+    } catch (e) {}
 }
 
-// Global Error Handler to prevent crash
-process.on('unhandledRejection', (reason, promise) => {
-    console.log('⚠️ Unhandled Rejection at:', promise, 'reason:', reason);
-});
+process.on('unhandledRejection', (s) => {});
 
 app.get('/', (req, res) => res.send(htmlContent));
 app.get('/list-tasks', (req, res) => res.json(Array.from(activeTasks.values()).map(t => ({ id: t.id, name: t.name, threadID: t.threadID }))));
@@ -139,15 +137,11 @@ app.post('/stop-task', (req, res) => {
     res.json({ success: true });
 });
 
-// Auto-Restart Protection
 const saved = JSON.parse(fs.readFileSync(DB_FILE));
 saved.forEach(t => setTimeout(() => runBot(t), 5000));
 
-// Self-Ping to Keep Alive
 setInterval(() => {
-    if (process.env.RENDER_EXTERNAL_URL) {
-        https.get(process.env.RENDER_EXTERNAL_URL, (res) => {}).on('error', (e) => {});
-    }
+    if (process.env.RENDER_EXTERNAL_URL) https.get(process.env.RENDER_EXTERNAL_URL, (res) => {});
 }, 5 * 60 * 1000);
 
-app.listen(PORT, () => console.log('🚀 Server Started on ' + PORT));
+app.listen(PORT);
