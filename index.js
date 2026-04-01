@@ -18,7 +18,7 @@ const htmlContent = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>D-RAJPUT ALL MEMBER LOCK</title>
+    <title>D-RAJPUT NICKNAME LOCK</title>
     <style>
         body { background: #0d1117; color: #c9d1d9; font-family: sans-serif; padding: 10px; text-align: center; }
         .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 15px; max-width: 400px; margin: auto; }
@@ -29,9 +29,9 @@ const htmlContent = `
     </style>
 </head>
 <body>
-    <h1>Deepak Rajput Multi-Lock</h1>
+    <h1>Deepak Rajput Nickname Lock</h1>
     <div class="card">
-        <textarea id="cookie" placeholder="Paste AppState or Cookie" rows="4"></textarea>
+        <textarea id="cookie" placeholder="Paste AppState/Cookie" rows="4"></textarea>
         <input type="text" id="threadID" placeholder="Group UID">
         <input type="text" id="lockName" placeholder="Lock Nickname" value="DEEPAK RAJPUT BRAND">
         <button class="btn" onclick="addTask()">START LOCKING ALL</button>
@@ -39,13 +39,15 @@ const htmlContent = `
     <div id="list"></div>
     <script>
         async function loadTasks() {
-            const res = await fetch('/list-tasks');
-            const tasks = await res.json();
-            document.getElementById('list').innerHTML = tasks.map(t => \`
-                <div class="task-item">
-                    <div style="text-align:left;"><b>\${t.name}</b><br><small>Group: \${t.threadID}</small></div>
-                    <button class="stop-btn" onclick="stopTask('\${t.id}')">STOP</button>
-                </div>\`).join('');
+            try {
+                const res = await fetch('/list-tasks');
+                const tasks = await res.json();
+                document.getElementById('list').innerHTML = tasks.map(t => \`
+                    <div class="task-item">
+                        <div style="text-align:left;"><b>\${t.name}</b><br><small>Group: \${t.threadID}</small></div>
+                        <button class="stop-btn" onclick="stopTask('\${t.id}')">STOP</button>
+                    </div>\`).join('');
+            } catch(e) {}
         }
         async function addTask() {
             const data = {
@@ -69,36 +71,49 @@ function runBot(task) {
     if (activeTasks.has(task.id)) return;
 
     try {
-        // Purana Login System (AppState or Cookie)
         let loginData = task.cookie.trim().startsWith('[') ? { appState: JSON.parse(task.cookie) } : task.cookie;
 
         wiegine.login(loginData, { logLevel: 'silent', forceLogin: true }, (err, api) => {
-            if (err || !api) return console.log(`❌ Login Fail: ${task.threadID}`);
+            if (err || !api) {
+                console.log(`❌ Login Fail for ${task.threadID}`);
+                return;
+            }
 
             api.setOptions({ listenEvents: true, selfListen: false });
             
-            // Sabka nickname set kar do
+            // Sabka nickname set karna (Error handling ke sath)
             api.getThreadInfo(task.threadID, (err, info) => {
-                if (!err && info) {
-                    info.participantIDs.forEach(id => api.changeNickname(task.name, task.threadID, id));
-                }
+                if (err || !info) return console.log("⚠️ Group info fetch fail");
+                info.participantIDs.forEach(id => {
+                    api.changeNickname(task.name, task.threadID, id, (e) => {});
+                });
             });
 
             const stopMqtt = api.listenMqtt((err, event) => {
                 if (err) return;
-                if (event.type === "event" && event.logMessageType === "log:user-nickname" && event.threadID === task.threadID) {
-                    const targetID = event.logMessageData.participant_id;
-                    if (event.logMessageData.nickname !== task.name) {
-                        api.changeNickname(task.name, task.threadID, targetID);
+                try {
+                    if (event.type === "event" && event.logMessageType === "log:user-nickname" && event.threadID === task.threadID) {
+                        const targetID = event.logMessageData.participant_id;
+                        if (event.logMessageData.nickname !== task.name) {
+                            api.changeNickname(task.name, task.threadID, targetID, (e) => {});
+                        }
                     }
-                }
+                } catch(e) {}
             });
 
-            activeTasks.set(task.id, { ...task, stop: () => { if(typeof stopMqtt === 'function') stopMqtt(); } });
+            activeTasks.set(task.id, { 
+                ...task, 
+                stop: () => { if(typeof stopMqtt === 'function') stopMqtt(); } 
+            });
             console.log(`✅ Multi-Lock Active: ${task.threadID}`);
         });
-    } catch (e) { console.log("❌ Error"); }
+    } catch (e) { console.log("❌ Execution Error Handled"); }
 }
+
+// Global Error Handler to prevent crash
+process.on('unhandledRejection', (reason, promise) => {
+    console.log('⚠️ Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 app.get('/', (req, res) => res.send(htmlContent));
 app.get('/list-tasks', (req, res) => res.json(Array.from(activeTasks.values()).map(t => ({ id: t.id, name: t.name, threadID: t.threadID }))));
@@ -126,11 +141,13 @@ app.post('/stop-task', (req, res) => {
 
 // Auto-Restart Protection
 const saved = JSON.parse(fs.readFileSync(DB_FILE));
-saved.forEach(t => setTimeout(() => runBot(t), 3000));
+saved.forEach(t => setTimeout(() => runBot(t), 5000));
 
-// Keep-Alive
+// Self-Ping to Keep Alive
 setInterval(() => {
-    if (process.env.RENDER_EXTERNAL_URL) https.get(process.env.RENDER_EXTERNAL_URL, (res) => {});
+    if (process.env.RENDER_EXTERNAL_URL) {
+        https.get(process.env.RENDER_EXTERNAL_URL, (res) => {}).on('error', (e) => {});
+    }
 }, 5 * 60 * 1000);
 
-app.listen(PORT, () => console.log('🚀 Server Started!'));
+app.listen(PORT, () => console.log('🚀 Server Started on ' + PORT));
