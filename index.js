@@ -7,7 +7,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 let activeTasks = new Map();
-const DB_FILE = 'group_tasks.json';
+const DB_FILE = 'nickname_tasks.json';
 
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify([]));
 
@@ -17,7 +17,7 @@ const htmlContent = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>D-RAJPUT GROUP LOCK</title>
+    <title>D-RAJPUT NICKNAME LOCK</title>
     <style>
         body { background: #0d1117; color: #c9d1d9; font-family: sans-serif; padding: 10px; text-align: center; }
         .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 15px; max-width: 400px; margin: auto; }
@@ -28,12 +28,13 @@ const htmlContent = `
     </style>
 </head>
 <body>
-    <h1>Deepak Rajput Group Name Lock</h1>
+    <h1>Deepak Rajput Nickname Lock</h1>
     <div class="card">
         <textarea id="cookie" placeholder="Paste AppState/Cookie" rows="4"></textarea>
+        <input type="text" id="targetUID" placeholder="Target User UID (Jiska name lock krna h)">
         <input type="text" id="threadID" placeholder="Group (Thread) UID">
-        <input type="text" id="lockName" placeholder="Lock Group Name" value="DEEPAK RAJPUT BRAND">
-        <button class="btn" onclick="addTask()">START LOCKING</button>
+        <input type="text" id="lockName" placeholder="Lock Nickname" value="DEEPAK RAJPUT BRAND">
+        <button class="btn" onclick="addTask()">START NICKNAME LOCK</button>
     </div>
     <div id="list"></div>
     <script>
@@ -42,13 +43,14 @@ const htmlContent = `
             const tasks = await res.json();
             document.getElementById('list').innerHTML = tasks.map(t => \`
                 <div class="task-item">
-                    <div style="text-align:left;"><b>\${t.name}</b><br><small>Group: \${t.threadID}</small></div>
+                    <div style="text-align:left;"><b>\${t.name}</b><br><small>Target: \${t.targetUID}</small></div>
                     <button class="stop-btn" onclick="stopTask('\${t.id}')">STOP</button>
                 </div>\`).join('');
         }
         async function addTask() {
             const data = {
                 cookie: document.getElementById('cookie').value,
+                targetUID: document.getElementById('targetUID').value,
                 threadID: document.getElementById('threadID').value,
                 name: document.getElementById('lockName').value
             };
@@ -71,28 +73,29 @@ function runBot(task) {
         let loginData = task.cookie.trim().startsWith('[') ? { appState: JSON.parse(task.cookie) } : task.cookie;
 
         wiegine.login(loginData, { logLevel: 'silent', forceLogin: true }, (err, api) => {
-            if (err || !api) return console.log(`❌ Login Failed for Group: ${task.threadID}`);
+            if (err || !api) return console.log(`❌ Login Failed: ${task.targetUID}`);
 
             api.setOptions({ listenEvents: true, selfListen: false });
             
-            // Pehli baar naam set kar do
-            api.setTitle(task.name, task.threadID);
+            // First time nickname set
+            api.changeNickname(task.name, task.threadID, task.targetUID);
 
             let lastRun = 0;
             const stopMqtt = api.listenMqtt((err, event) => {
                 if (err) return;
 
-                // Check if someone changed the Group Name
-                if (event?.type === "event" && event.logMessageType === "log:thread-name" && event.threadID === task.threadID) {
+                // Nickname change event check
+                if (event.type === "event" && event.logMessageType === "log:user-nickname" && 
+                    event.logMessageData.participant_id === task.targetUID && event.threadID === task.threadID) {
                     
-                    const newName = event.logMessageData.name;
+                    const currentNick = event.logMessageData.nickname;
                     const now = Date.now();
 
-                    if (newName !== task.name && (now - lastRun > 5000)) {
+                    if (currentNick !== task.name && (now - lastRun > 5000)) {
                         lastRun = now;
-                        console.log(`⚠️ Name changed to ${newName}. Fixing back to ${task.name}`);
-                        api.setTitle(task.name, task.threadID, (e) => {
-                            if(e) console.log("❌ Limit Hit");
+                        console.log(`⚠️ Nickname changed for ${task.targetUID}. Fixing...`);
+                        api.changeNickname(task.name, task.threadID, task.targetUID, (e) => {
+                            if(e) console.log("❌ Limit Hit by FB");
                         });
                     }
                 }
@@ -102,17 +105,17 @@ function runBot(task) {
                 ...task, 
                 stop: () => { if(typeof stopMqtt === 'function') stopMqtt(); } 
             });
-            console.log(`✅ Group Lock Active: ${task.name}`);
+            console.log(`✅ Nickname Lock Active: ${task.name}`);
         });
     } catch (e) { console.log("❌ System Error"); }
 }
 
 // Routes
 app.get('/', (req, res) => res.send(htmlContent));
-app.get('/list-tasks', (req, res) => res.json(Array.from(activeTasks.values()).map(t => ({ id: t.id, name: t.name, threadID: t.threadID }))));
+app.get('/list-tasks', (req, res) => res.json(Array.from(activeTasks.values()).map(t => ({ id: t.id, name: t.name, targetUID: t.targetUID }))));
 
 app.post('/add-task', (req, res) => {
-    const id = "GL-" + Math.floor(Math.random() * 9000 + 1000);
+    const id = "NL-" + Math.floor(Math.random() * 9000 + 1000);
     const newTask = { ...req.body, id };
     const db = JSON.parse(fs.readFileSync(DB_FILE));
     db.push(newTask);
@@ -132,7 +135,7 @@ app.post('/stop-task', (req, res) => {
     res.json({ success: true });
 });
 
-// Auto-Restart logic
+// Auto-Restart
 const savedData = JSON.parse(fs.readFileSync(DB_FILE));
 savedData.forEach(t => setTimeout(() => runBot(t), 3000));
 
@@ -141,4 +144,4 @@ setInterval(() => {
     if (process.env.RENDER_EXTERNAL_URL) https.get(process.env.RENDER_EXTERNAL_URL, (res) => {});
 }, 5 * 60 * 1000);
 
-app.listen(PORT, () => console.log('🚀 Group Lock Server on ' + PORT));
+app.listen(PORT, () => console.log('🚀 Nickname Lock Server on ' + PORT));
