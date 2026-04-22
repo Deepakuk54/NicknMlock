@@ -1,11 +1,7 @@
 {
-  "name": "drb-lock-render",
+  "name": "drb-railway",
   "version": "1.0.0",
-  "description": "Deepak Rajput Brand Stealth Lock",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
   "dependencies": {
     "express": "^4.18.2",
     "fca-mafiya": "latest"
