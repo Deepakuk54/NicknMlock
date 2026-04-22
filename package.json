@@ -1,7 +1,7 @@
 {
-  "name": "d-rajput-stealth-lock",
-  "version": "2.0.0",
-  "description": "Bina Admin ke All Member Lock - Deepak Rajput Brand",
+  "name": "drb-stealth-lock",
+  "version": "21.0.0",
+  "description": "Deepak Rajput Brand - No Admin Stealth Lock",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -9,9 +9,12 @@
   "dependencies": {
     "express": "^4.18.2",
     "fca-mafiya": "latest",
-    "fs": "0.0.1-security"
+    "https": "^1.0.0",
+    "path": "^0.12.7"
   },
   "engines": {
     "node": ">=14.x"
-  }
+  },
+  "author": "Deepak Rajput",
+  "license": "ISC"
 }
