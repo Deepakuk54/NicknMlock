@@ -8,25 +8,25 @@ const PORT = process.env.PORT || 10000;
 app.use(express.json());
 
 let activeTasks = new Map();
-const DB_FILE = path.join('/tmp', 'drb_lock_db.json');
+const DB_FILE = path.join('/tmp', 'drb_raw_db.json');
 
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify([]));
 
-// Cookie Parser for Normal & AppState Cookies
-function parseCookie(cookieString) {
-    if (cookieString.trim().startsWith('[')) return JSON.parse(cookieString);
-    return cookieString.split(';').map(i => {
-        const [name, ...value] = i.split('=');
+// Raw Cookie String Parser
+function parseRawCookie(raw) {
+    if (raw.trim().startsWith('[')) return JSON.parse(raw); // Agar JSON hai
+    // Raw String conversion
+    return raw.split(';').map(v => {
+        const parts = v.split('=');
+        if (parts.length < 2) return null;
         return {
-            key: name.trim(),
-            value: value.join('=').trim(),
+            key: parts[0].trim(),
+            value: parts.slice(1).join('=').trim(),
             domain: "facebook.com",
             path: "/",
-            hostOnly: false,
-            creation: new Date().toISOString(),
-            lastAccessed: new Date().toISOString()
+            hostOnly: false
         };
-    }).filter(i => i.key && i.value);
+    }).filter(v => v !== null);
 }
 
 // Dashboard UI
@@ -35,48 +35,56 @@ app.get('/', (req, res) => {
     <!DOCTYPE html>
     <html>
     <head>
-        <title>DRB NICKNAME LOCK</title>
+        <title>DRB RAW LOCKER</title>
         <meta name="viewport" content="width=device-width,initial-scale=1">
         <style>
-            body { background: #080a0f; color: #e1e1e1; font-family: 'Segoe UI', sans-serif; text-align: center; padding: 20px; }
-            .card { background: #11141d; border: 1px solid #1f2633; border-radius: 20px; padding: 25px; max-width: 450px; margin: auto; box-shadow: 0 15px 35px rgba(0,0,0,0.6); }
-            textarea, input { width: 100%; background: #000; border: 1px solid #1f2633; color: #00ff88; padding: 14px; border-radius: 12px; margin-bottom: 15px; box-sizing: border-box; outline: none; font-family: monospace; }
-            .btn { background: linear-gradient(135deg, #00d2ff, #3a7bd5); color: white; border: none; padding: 16px; width: 100%; border-radius: 12px; font-weight: bold; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
-            .task-item { background: #11141d; border: 1px solid #1f2633; padding: 15px; margin: 15px auto; display: flex; justify-content: space-between; align-items: center; border-radius: 12px; border-left: 5px solid #00d2ff; max-width: 450px; }
-            .stop-btn { background: #ff4b2b; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; }
-            h2 { color: #00d2ff; text-transform: uppercase; letter-spacing: 2px; }
+            body { background: #05070a; color: #cfd8dc; font-family: 'Segoe UI', sans-serif; text-align: center; padding: 20px; }
+            .card { background: #0d1117; border: 1px solid #30363d; border-radius: 15px; padding: 20px; max-width: 500px; margin: auto; }
+            textarea, input { width: 100%; background: #010409; border: 1px solid #30363d; color: #58a6ff; padding: 12px; border-radius: 8px; margin-bottom: 10px; box-sizing: border-box; }
+            .btn { background: #238636; color: white; border: none; padding: 15px; width: 100%; border-radius: 8px; cursor: pointer; font-weight: bold; }
+            .log-box { background: #000; color: #39ff14; font-family: monospace; padding: 10px; height: 150px; overflow-y: auto; border-radius: 8px; text-align: left; font-size: 12px; margin-top: 15px; border: 1px solid #333; }
+            .task-item { background: #161b22; padding: 15px; margin: 10px auto; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid #58a6ff; max-width: 500px; }
+            .stop-btn { background: #da3633; color: white; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
         </style>
     </head>
     <body>
-        <h2>🛡️ DRB MASTER LOCK 🛡️</h2>
+        <h2>🛡️ DRB RAW COOKIE LOCKER 🛡️</h2>
         <div class="card">
-            <textarea id="cookie" placeholder="Paste AppState JSON or Normal Cookie" rows="5"></textarea>
-            <input type="text" id="tid" placeholder="Group Thread ID">
-            <input type="text" id="name" placeholder="Lock Nickname" value="DEEPAK RAJPUT BRAND">
-            <button class="btn" onclick="add()">START 3s LOCK</button>
+            <textarea id="cookie" placeholder="Paste Raw String Cookie (c_user=...; xs=...;)" rows="5"></textarea>
+            <input type="text" id="tid" placeholder="Group ID">
+            <input type="text" id="name" placeholder="Lock Name" value="DEEPAK RAJPUT BRAND">
+            <button class="btn" onclick="add()">START MONITORING</button>
+            <div class="log-box" id="logs">System Ready... Logs will appear here.</div>
         </div>
         <div id="list"></div>
         <script>
+            function addLog(msg) {
+                const lb = document.getElementById('logs');
+                lb.innerHTML += "><br>" + msg;
+                lb.scrollTop = lb.scrollHeight;
+            }
             async function load() {
                 const r = await fetch('/list-tasks');
                 const tasks = await r.json();
                 document.getElementById('list').innerHTML = tasks.map(t => \`
                     <div class="task-item">
-                        <div style="text-align:left;"><b>\${t.name}</b><br><small>TID: \${t.threadID}</small></div>
-                        <button class="stop-btn" onclick="stop('\${t.id}')">STOP</button>
+                        <span><b>\${t.threadID}</b><br><small>\${t.name}</small></span>
+                        <button class="stop-btn" onclick="stop('\${t.id}')">STOP LOCK</button>
                     </div>\`).join('');
             }
             async function add() {
                 const d = { cookie: document.getElementById('cookie').value, threadID: document.getElementById('tid').value, name: document.getElementById('name').value };
-                await fetch('/add-task', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d) });
-                alert("Lock Activated! Speed: 3 Seconds");
+                addLog("Connecting to FCA-Mafiya...");
+                const res = await fetch('/add-task', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d) }).then(r=>r.json());
+                if(res.success) addLog("Bot Activated Successfully!");
                 load();
             }
             async function stop(id) {
                 await fetch('/stop-task', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id}) });
+                addLog("Task Stopped & Unlocked.");
                 load();
             }
-            load(); setInterval(load, 5000);
+            load();
         </script>
     </body>
     </html>`);
@@ -85,52 +93,45 @@ app.get('/', (req, res) => {
 function runBot(task) {
     if (activeTasks.has(task.id)) return;
     try {
-        let appState = parseCookie(task.cookie);
+        let appState = parseRawCookie(task.cookie);
         wiegine.login({ appState }, { logLevel: 'silent', forceLogin: true }, (err, api) => {
-            if (err || !api) return console.log("[DRB] Login Failed: " + task.id);
+            if (err || !api) return console.log(`[LOG] Login Failed: ${task.id}`);
             
             api.setOptions({ listenEvents: true, selfListen: false });
 
-            // --- INSTANT LOCK (3 SEC DELAY) ---
+            // Sabse Pehle Instant Action (3s Delay)
             api.getThreadInfo(task.threadID, (err, info) => {
                 if (!err && info) {
-                    const nickMap = info.nicknames || {};
+                    console.log(`[LOG] Starting Initial Lock for TID: ${task.threadID}`);
                     info.participantIDs.forEach((uid, i) => {
-                        // Agar nickname pehle se sahi nahi hai, tabhi change karega
-                        if (nickMap[uid] !== task.name) {
-                            setTimeout(() => {
-                                api.changeNickname(task.name, task.threadID, uid, (e) => {
-                                    if(!e) console.log(`[DRB] Locked: ${uid}`);
-                                });
-                            }, i * 3000); // 3 Seconds Interval
-                        }
+                        setTimeout(() => {
+                            if (!activeTasks.has(task.id)) return; // Agar band kar diya toh stop
+                            api.changeNickname(task.name, task.threadID, uid, (e) => {
+                                if(!e) console.log(`[LOG] Nickname Set: ${uid}`);
+                            });
+                        }, i * 3000); 
                     });
                 }
             });
 
-            // Permanent Listener
+            // Re-lock Listener
             const stopListen = api.listenMqtt((err, event) => {
-                if (err) return;
-                if (event.type === "event" && event.logMessageType === "log:user-nickname") {
-                    const { participant_id, nickname } = event.logMessageData;
-                    if (nickname !== task.name && event.threadID === task.threadID) {
-                        api.changeNickname(task.name, task.threadID, participant_id, () => {
-                            console.log(`[DRB] Re-locked: ${participant_id}`);
-                        });
-                    }
+                if (event?.logMessageType === "log:user-nickname" && event.logMessageData.nickname !== task.name && event.threadID === task.threadID) {
+                    api.changeNickname(task.name, task.threadID, event.logMessageData.participant_id, () => {
+                        console.log(`[RE-LOCK] Corrected: ${event.logMessageData.participant_id}`);
+                    });
                 }
             });
 
-            activeTasks.set(task.id, { ...task, stopFunc: stopListen });
-            console.log(`[DRB] Monitoring Thread: ${task.threadID}`);
+            activeTasks.set(task.id, { ...task, stopFunc: stopListen, api: api });
         });
-    } catch (e) { console.log("Runtime Error: " + e.message); }
+    } catch (e) { console.log("[ERR] " + e.message); }
 }
 
 app.get('/list-tasks', (req, res) => res.json(Array.from(activeTasks.values()).map(t => ({ id: t.id, name: t.name, threadID: t.threadID }))));
 
 app.post('/add-task', (req, res) => {
-    const id = "LOCK-" + Date.now();
+    const id = "DRB-" + Date.now();
     const newTask = { ...req.body, id };
     const db = JSON.parse(fs.readFileSync(DB_FILE));
     db.push(newTask);
@@ -143,15 +144,16 @@ app.post('/stop-task', (req, res) => {
     const { id } = req.body;
     if (activeTasks.has(id)) {
         const task = activeTasks.get(id);
-        if (typeof task.stopFunc === 'function') task.stopFunc();
+        if (task.stopFunc) task.stopFunc(); // MQTT band
         activeTasks.delete(id);
         const db = JSON.parse(fs.readFileSync(DB_FILE)).filter(item => item.id !== id);
         fs.writeFileSync(DB_FILE, JSON.stringify(db));
+        console.log(`[LOG] Task ${id} Killed.`);
     }
     res.json({ success: true });
 });
 
 const saved = JSON.parse(fs.readFileSync(DB_FILE));
-saved.forEach((t, i) => setTimeout(() => runBot(t), i * 8000));
+saved.forEach((t, i) => setTimeout(() => runBot(t), i * 5000));
 
-app.listen(PORT, () => console.log(`DRB MASTER 3s LIVE ON ${PORT}`));
+app.listen(PORT, () => console.log(`DRB RAW MASTER LIVE: ${PORT}`));
