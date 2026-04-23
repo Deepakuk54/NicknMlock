@@ -1,111 +1,111 @@
 const express = require('express');
 const wiegine = require('fca-mafiya');
 const fs = require('fs');
+const path = require('path');
 const app = express();
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.use(express.json());
 
 let activeTasks = new Map();
-const DB_FILE = 'all_members_db.json';
+const DB_FILE = path.join('/tmp', 'drb_lock_db.json');
 
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify([]));
 
-const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DRB LOCK - RENDER SERVER</title>
-    <style>
-        body { background: #0d1117; color: #c9d1d9; font-family: sans-serif; padding: 15px; text-align: center; }
-        .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; max-width: 450px; margin: auto; }
-        textarea, input { width: 100%; background: #0d1117; border: 1px solid #30363d; color: white; padding: 12px; border-radius: 8px; margin-bottom: 12px; box-sizing: border-box; outline: none; }
-        .btn { background: #238636; color: white; border: none; padding: 15px; width: 100%; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        .task-item { background: #1c2128; border: 1px solid #30363d; padding: 12px; margin: 12px auto; display: flex; justify-content: space-between; align-items: center; border-radius: 8px; border-left: 4px solid #238636; max-width: 450px; }
-        .stop-btn { background: #da3633; color: white; border: none; padding: 8px 15px; border-radius: 6px; cursor: pointer; }
-        h1 { color: #58a6ff; }
-    </style>
-</head>
-<body>
-    <h1>Deepak Rajput Brand</h1>
-    <p style="color:#8b949e">Server Status: <span style="color:#238636">ONLINE</span></p>
-    <div class="card">
-        <textarea id="cookie" placeholder="Paste AppState/Cookie" rows="4"></textarea>
-        <input type="text" id="threadID" placeholder="Group UID">
-        <input type="text" id="lockName" placeholder="Nickname" value="DEEPAK RAJPUT BRAND">
-        <button class="btn" onclick="addTask()">START LOCK</button>
-    </div>
-    <div id="list"></div>
-    <script>
-        async function loadTasks() {
-            try {
-                const res = await fetch('/list-tasks');
-                const tasks = await res.json();
+// Dashboard UI
+app.get('/', (req, res) => {
+    res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>DRB NICKNAME LOCK</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>
+            body { background: #0a0a0c; color: #e1e1e1; font-family: 'Segoe UI', sans-serif; text-align: center; padding: 20px; }
+            .card { background: #16161d; border: 1px solid #2a2a35; border-radius: 15px; padding: 20px; max-width: 450px; margin: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+            input, textarea { width: 100%; background: #1c1c26; border: 1px solid #333; color: #00f2ff; padding: 12px; border-radius: 10px; margin-bottom: 12px; box-sizing: border-box; outline: none; }
+            .btn { background: linear-gradient(90deg, #00c6ff, #0072ff); color: white; border: none; padding: 15px; width: 100%; border-radius: 10px; font-weight: bold; cursor: pointer; text-transform: uppercase; }
+            .task-item { background: #1c1c26; border: 1px solid #333; padding: 15px; margin: 12px auto; display: flex; justify-content: space-between; align-items: center; border-radius: 10px; border-left: 5px solid #00f2ff; max-width: 450px; }
+            .stop-btn { background: #ff4b2b; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 12px; }
+            h2 { color: #00f2ff; text-shadow: 0 0 10px rgba(0,242,255,0.3); }
+        </style>
+    </head>
+    <body>
+        <h2>🛡️ DRB NICKNAME LOCK 🛡️</h2>
+        <div class="card">
+            <textarea id="cookie" placeholder="Paste AppState JSON" rows="4"></textarea>
+            <input type="text" id="tid" placeholder="Group Thread ID">
+            <input type="text" id="name" placeholder="Lock Nickname" value="DEEPAK RAJPUT BRAND">
+            <button class="btn" onclick="add()">LOCK NICKNAMES</button>
+        </div>
+        <div id="list"></div>
+        <script>
+            async function load() {
+                const r = await fetch('/list-tasks');
+                const tasks = await r.json();
                 document.getElementById('list').innerHTML = tasks.map(t => \`
                     <div class="task-item">
-                        <div style="text-align:left;"><b>\${t.name}</b><br><small>UID: \${t.threadID}</small></div>
-                        <button class="stop-btn" onclick="stopTask('\${t.id}')">STOP</button>
+                        <div style="text-align:left;"><b>\${t.name}</b><br><small>TID: \${t.threadID}</small></div>
+                        <button class="stop-btn" onclick="stop('\${t.id}')">STOP & UNLOCK</button>
                     </div>\`).join('');
-            } catch(e) {}
-        }
-        async function addTask() {
-            const data = {
-                cookie: document.getElementById('cookie').value.trim(),
-                threadID: document.getElementById('threadID').value.trim(),
-                name: document.getElementById('lockName').value.trim()
-            };
-            if(!data.cookie || !data.threadID) return alert("Fill all fields!");
-            await fetch('/add-task', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) });
-            loadTasks();
-        }
-        async function stopTask(id) {
-            await fetch('/stop-task', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ id }) });
-            loadTasks();
-        }
-        loadTasks(); setInterval(loadTasks, 5000);
-    </script>
-</body>
-</html>`;
+            }
+            async function add() {
+                const d = { cookie: document.getElementById('cookie').value, threadID: document.getElementById('tid').value, name: document.getElementById('name').value };
+                await fetch('/add-task', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d) });
+                load();
+            }
+            async function stop(id) {
+                await fetch('/stop-task', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id}) });
+                load();
+            }
+            load(); setInterval(load, 4000);
+        </script>
+    </body>
+    </html>`);
+});
 
 function runBot(task) {
     if (activeTasks.has(task.id)) return;
     try {
-        let loginData = task.cookie.startsWith('[') ? { appState: JSON.parse(task.cookie) } : task.cookie;
-        wiegine.login(loginData, { 
-            logLevel: 'silent', 
-            forceLogin: true,
-            userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        }, (err, api) => {
-            if (err || !api) return console.log("Login fail: " + task.threadID);
-            api.setOptions({ listenEvents: true, selfListen: false });
+        let loginData = task.cookie.startsWith('[') ? { appState: JSON.parse(task.cookie) } : { appState: task.cookie };
+        wiegine.login(loginData, { logLevel: 'silent', forceLogin: true }, (err, api) => {
+            if (err || !api) return console.log("Login Error for " + task.id);
             
+            api.setOptions({ listenEvents: true, selfListen: false });
+
+            // Initial Lock: Sabka nickname ek saath change karo
             api.getThreadInfo(task.threadID, (err, info) => {
-                if (err || !info) return;
-                info.participantIDs.forEach((id, i) => {
-                    setTimeout(() => api.changeNickname(task.name, task.threadID, id, () => {}), i * 1500);
-                });
+                if (!err && info) {
+                    info.participantIDs.forEach((uid, i) => {
+                        setTimeout(() => api.changeNickname(task.name, task.threadID, uid, () => {}), i * 2000);
+                    });
+                }
             });
 
-            const stopMqtt = api.listenMqtt((err, event) => {
-                if (event?.type === "event" && event.logMessageType === "log:user-nickname" && event.threadID === task.threadID) {
-                    if (event.logMessageData.nickname !== task.name) {
-                        api.changeNickname(task.name, task.threadID, event.logMessageData.participant_id, () => {});
+            // Permanent Lock: Agar koi badle toh wapas set karo
+            const stopListen = api.listenMqtt((err, event) => {
+                if (err) return;
+                if (event.type === "event" && event.logMessageType === "log:user-nickname") {
+                    const { participant_id, nickname } = event.logMessageData;
+                    if (nickname !== task.name && event.threadID === task.threadID) {
+                        api.changeNickname(task.name, task.threadID, participant_id, () => {
+                            console.log(`[DRB] Re-locked nickname for ${participant_id}`);
+                        });
                     }
                 }
             });
 
-            activeTasks.set(task.id, { ...task, stop: stopMqtt });
+            // Store the stop function in the Map
+            activeTasks.set(task.id, { ...task, stopFunc: stopListen });
+            console.log(`[DRB] Lock Active: ${task.threadID}`);
         });
-    } catch (e) {}
+    } catch (e) { console.log("Runtime Error: " + e.message); }
 }
 
-app.get('/', (req, res) => res.send(htmlContent));
 app.get('/list-tasks', (req, res) => res.json(Array.from(activeTasks.values()).map(t => ({ id: t.id, name: t.name, threadID: t.threadID }))));
 
 app.post('/add-task', (req, res) => {
-    const id = "DRB-" + Date.now();
+    const id = "LOCK-" + Date.now();
     const newTask = { ...req.body, id };
     const db = JSON.parse(fs.readFileSync(DB_FILE));
     db.push(newTask);
@@ -117,18 +117,20 @@ app.post('/add-task', (req, res) => {
 app.post('/stop-task', (req, res) => {
     const { id } = req.body;
     if (activeTasks.has(id)) {
-        activeTasks.get(id).stop();
+        const task = activeTasks.get(id);
+        if (typeof task.stopFunc === 'function') {
+            task.stopFunc(); // This stops the MQTT listener
+        }
         activeTasks.delete(id);
         const db = JSON.parse(fs.readFileSync(DB_FILE)).filter(item => item.id !== id);
         fs.writeFileSync(DB_FILE, JSON.stringify(db));
+        console.log(`[DRB] Task Stopped: ${id}`);
     }
     res.json({ success: true });
 });
 
-// Restart saved tasks
-try {
-    const saved = JSON.parse(fs.readFileSync(DB_FILE));
-    saved.forEach((t, i) => setTimeout(() => runBot(t), (i + 1) * 4000));
-} catch(e) {}
+// Auto-restart logic
+const saved = JSON.parse(fs.readFileSync(DB_FILE));
+saved.forEach((t, i) => setTimeout(() => runBot(t), i * 5000));
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Server live on ${PORT}`));
+app.listen(PORT, () => console.log(`DRB LOCK Server Live on ${PORT}`));
