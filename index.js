@@ -8,25 +8,32 @@ const PORT = process.env.PORT || 10000;
 app.use(express.json());
 
 let activeLocks = new Map();
-const DB_FILE = path.join('/tmp', 'drb_nickname_db.json');
+// Render ke liye /tmp/ folder best hai database save karne ke liye
+const DB_FILE = path.join('/tmp', 'drb_nickname_v2.json');
 
 if (!fs.existsSync(DB_FILE)) fs.writeFileSync(DB_FILE, JSON.stringify([]));
 
-function saveDB(data) { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); }
-function loadDB() { return JSON.parse(fs.readFileSync(DB_FILE)); }
+function saveDB(data) { try { fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2)); } catch(e){} }
+function loadDB() { 
+    try { return JSON.parse(fs.readFileSync(DB_FILE)); } 
+    catch(e){ return []; } 
+}
 
-// --- BOT LOGIC ---
+// --- BOT CORE LOGIC ---
 function startLockBot(task) {
     if (activeLocks.has(task.id)) return;
     
-    let loginData = task.cookie.startsWith('[') ? { appState: JSON.parse(task.cookie) } : task.cookie;
+    let loginData = task.cookie.trim().startsWith('[') ? { appState: JSON.parse(task.cookie) } : { appState: task.cookie };
     
     wiegine.login(loginData, { logLevel: 'silent', forceLogin: true }, (err, api) => {
-        if (err || !api) return console.log("Login Failed for: " + task.id);
+        if (err || !api) {
+            console.log(`[DRB] Login Failed: ${task.id}`);
+            return;
+        }
 
         api.setOptions({ listenEvents: true, selfListen: false });
 
-        // 1. Pehli baar mein sabka lock karna
+        // Initial Force Lock
         api.getThreadInfo(task.threadID, (err, info) => {
             if (!err && info) {
                 info.participantIDs.forEach((uid, i) => {
@@ -35,20 +42,20 @@ function startLockBot(task) {
             }
         });
 
-        // 2. Monitoring Logic (Anti-Change)
+        // Real-time Monitoring (Anti-Change)
         const stopListener = api.listenMqtt((err, event) => {
             if (event?.type === "event" && event.logMessageType === "log:user-nickname") {
                 const { participant_id, nickname } = event.logMessageData;
-                // Agar badla hua nickname mere lock name se alag hai, toh panga hai
                 if (nickname !== task.nickname && event.threadID === task.threadID) {
-                    api.changeNickname(task.nickname, task.threadID, participant_id, (e) => {
-                        if(!e) console.log(`[DRB] Re-locked: ${participant_id}`);
+                    api.changeNickname(task.nickname, task.threadID, participant_id, () => {
+                        console.log(`[DRB] Locked: ${participant_id} in ${task.threadID}`);
                     });
                 }
             }
         });
 
         activeLocks.set(task.id, { ...task, stop: stopListener });
+        console.log(`[DRB] Bot Active on ${task.threadID}`);
     });
 }
 
@@ -56,78 +63,124 @@ function startLockBot(task) {
 app.get('/', (req, res) => {
     res.send(`
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1.0">
         <title>DRB | NICKNAME LOCKER</title>
-        <meta name="viewport" content="width=device-width,initial-scale=1">
         <style>
-            body { background: #0a0a0c; color: #fff; font-family: sans-serif; padding: 20px; text-align: center; }
-            .box { background: #16161d; border: 1px solid #2a2a35; border-radius: 20px; padding: 25px; max-width: 450px; margin: auto; box-shadow: 0 10px 40px #000; }
-            input, textarea { width: 100%; background: #1c1c26; border: 1px solid #333; color: #00f2ff; padding: 12px; border-radius: 10px; margin-bottom: 12px; box-sizing: border-box; outline: none; }
-            .btn { background: linear-gradient(90deg, #00c6ff, #0072ff); color: #fff; border: none; padding: 15px; width: 100%; border-radius: 10px; font-weight: bold; cursor: pointer; }
-            .item { background: #1c1c26; border-left: 5px solid #00f2ff; padding: 15px; margin-top: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; }
-            .stop { background: #ff4b2b; color: #fff; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; }
-            h2 { color: #00f2ff; letter-spacing: 1px; }
+            :root { --neon: #00f2ff; --bg: #0a0a0c; --card: #16161d; }
+            body { background: var(--bg); color: #fff; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+            .container { width: 100%; max-width: 450px; background: var(--card); border: 1px solid #2a2a35; border-radius: 20px; padding: 25px; box-shadow: 0 15px 50px rgba(0,0,0,0.8); }
+            h2 { color: var(--neon); text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 25px; }
+            textarea, input { width: 100%; background: #1c1c26; border: 1px solid #333; color: var(--neon); padding: 14px; border-radius: 12px; margin-bottom: 15px; box-sizing: border-box; outline: none; border-left: 3px solid transparent; transition: 0.3s; }
+            textarea:focus, input:focus { border-left: 3px solid var(--neon); background: #23232e; }
+            .btn { width: 100%; padding: 16px; background: linear-gradient(90deg, #00c6ff, #0072ff); color: #fff; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; text-transform: uppercase; box-shadow: 0 5px 15px rgba(0,114,255,0.4); }
+            .btn:active { transform: scale(0.98); }
+            #list { width: 100%; max-width: 450px; margin-top: 25px; }
+            .item { background: #1c1c26; border: 1px solid #333; padding: 15px; margin-bottom: 12px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid var(--neon); animation: fadeIn 0.5s ease; }
+            .stop-btn { background: #ff4b2b; color: #fff; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 12px; }
+            @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         </style>
     </head>
     <body>
-        <h2>🛡️ DEEPAK RAJPUT BRAND 🛡️</h2>
-        <div class="box">
-            <textarea id="ck" placeholder="Paste AppState Cookies" rows="4"></textarea>
-            <input type="text" id="tid" placeholder="Group Thread ID">
-            <input type="text" id="nk" placeholder="Lock Nickname" value="DEEPAK RAJPUT BRAND">
-            <button class="btn" onclick="start()">ACTIVATE LOCK</button>
+        <div class="container">
+            <h2>🛡️ DRB LOCKER 🛡️</h2>
+            <textarea id="ck" placeholder="Paste AppState Cookies JSON" rows="5"></textarea>
+            <input type="text" id="tid" placeholder="Group / Thread ID">
+            <input type="text" id="nk" placeholder="Nickname to Lock" value="DEEPAK RAJPUT BRAND">
+            <button class="btn" onclick="start()">ACTIVATE SYSTEM</button>
         </div>
         <div id="list"></div>
+
         <script>
             async function load() {
-                const r = await fetch('/list');
-                const data = await r.json();
-                document.getElementById('list').innerHTML = data.map(t => \`
-                    <div class="item">
-                        <div style="text-align:left"><b>\${t.nickname}</b><br><small>Group: \${t.threadID}</small></div>
-                        <button class="stop" onclick="stop('\${t.id}')">STOP</button>
-                    </div>\`).join('');
+                try {
+                    const r = await fetch('/list');
+                    const data = await r.json();
+                    const listDiv = document.getElementById('list');
+                    if(data.length === 0) {
+                        listDiv.innerHTML = '<p style="text-align:center; color:#666;">No active locks.</p>';
+                        return;
+                    }
+                    listDiv.innerHTML = data.map(t => \`
+                        <div class="item">
+                            <div style="text-align:left">
+                                <b style="color:var(--neon)">\${t.nickname}</b><br>
+                                <small style="color:#aaa">ID: \${t.threadID}</small>
+                            </div>
+                            <button class="stop-btn" onclick="stopTask('\${t.id}')">STOP</button>
+                        </div>\`).join('');
+                } catch(e) { console.error("Load error"); }
             }
+
             async function start() {
-                const d = { cookie: document.getElementById('ck').value, threadID: document.getElementById('tid').value, nickname: document.getElementById('nk').value };
-                await fetch('/add', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d) });
+                const ck = document.getElementById('ck').value;
+                const tid = document.getElementById('tid').value;
+                const nk = document.getElementById('nk').value;
+                if(!ck || !tid) return alert("Fill all details!");
+
+                await fetch('/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cookie: ck, threadID: tid, nickname: nk })
+                });
+                document.getElementById('ck').value = "";
                 load();
             }
-            async function stop(id) {
-                await fetch('/stop', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id}) });
-                load();
+
+            async function stopTask(id) {
+                const res = await fetch('/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                const j = await res.json();
+                if(j.success) load();
             }
-            load(); setInterval(load, 5000);
+
+            load(); 
+            setInterval(load, 8000); // UI Sync
         </script>
     </body>
     </html>`);
 });
 
-app.get('/list', (req, res) => res.json(Array.from(activeLocks.values()).map(t => ({ id: t.id, nickname: t.nickname, threadID: t.threadID }))));
+// API Routes
+app.get('/list', (req, res) => {
+    res.json(Array.from(activeLocks.values()).map(t => ({ id: t.id, nickname: t.nickname, threadID: t.threadID })));
+});
 
 app.post('/add', (req, res) => {
-    const id = "DRB-LOCK-" + Date.now();
+    const id = "DRB-" + Date.now();
     const newTask = { ...req.body, id };
     const db = loadDB();
     db.push(newTask);
     saveDB(db);
     startLockBot(newTask);
-    res.json({ success: true });
+    res.json({ success: true, id });
 });
 
 app.post('/stop', (req, res) => {
     const { id } = req.body;
     if (activeLocks.has(id)) {
-        activeLocks.get(id).stop(); // Stop MQTT
-        activeLocks.delete(id);
-        const db = loadDB().filter(t => t.id !== id);
-        saveDB(db);
+        try {
+            const task = activeLocks.get(id);
+            if (task.stop && typeof task.stop === 'function') task.stop();
+            activeLocks.delete(id);
+            const db = loadDB().filter(t => t.id !== id);
+            saveDB(db);
+            res.json({ success: true });
+        } catch (e) {
+            res.status(500).json({ success: false });
+        }
+    } else {
+        res.status(404).json({ success: false });
     }
-    res.json({ success: true });
 });
 
-// Auto-restart
-loadDB().forEach((t, i) => setTimeout(() => startLockBot(t), i * 4000));
+// Auto-Restart logic
+const saved = loadDB();
+saved.forEach((t, i) => setTimeout(() => startLockBot(t), i * 5000));
 
-app.listen(PORT, () => console.log(`DRB LOCKER Live on ${PORT}`));
+app.listen(PORT, () => console.log(`DRB Server Live: ${PORT}`));
